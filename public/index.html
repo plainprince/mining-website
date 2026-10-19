@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Fullscreen demo</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #0b0b0c url("/api/wallpaper") center / cover no-repeat;
+        color: #fff;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      .stats-banner {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 20;
+        width: min(380px, calc(100vw - 32px));
+        box-sizing: border-box;
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 12px;
+        background: rgba(12, 12, 14, 0.82);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(12px);
+        font-size: 13px;
+        line-height: 1.4;
+        pointer-events: none;
+      }
+
+      .stats-banner[hidden] {
+        display: none;
+      }
+
+      .stats-banner h2 {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 10px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .stats-banner .stats-hint {
+        color: rgba(255, 255, 255, 0.45);
+        font-weight: 400;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 14px;
+        margin: 0;
+      }
+
+      .stats-grid dt {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .stats-grid dd {
+        margin: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <aside id="stats-banner" class="stats-banner" role="region" aria-label="Miner stats" hidden>
+      <h2>Miner stats <span class="stats-hint">press P to hide</span></h2>
+      <dl class="stats-grid">
+        <div><dt>State</dt><dd data-stat="state">—</dd></div>
+        <div><dt>Hashrate</dt><dd data-stat="hashrate">—</dd></div>
+        <div><dt>Dataset</dt><dd data-stat="dataset">—</dd></div>
+        <div><dt>Full mode</dt><dd data-stat="full">—</dd></div>
+        <div><dt>Threads</dt><dd data-stat="threads">—</dd></div>
+        <div><dt>Accepted</dt><dd data-stat="accepted">—</dd></div>
+        <div><dt>Rejected</dt><dd data-stat="rejected">—</dd></div>
+        <div><dt>Pool</dt><dd data-stat="pool">—</dd></div>
+        <div><dt>Worker</dt><dd data-stat="worker">—</dd></div>
+        <div><dt>Wallet</dt><dd data-stat="wallet">—</dd></div>
+        <div><dt>Stored shares</dt><dd data-stat="stored">—</dd></div>
+      </dl>
+    </aside>
+    <script src="/randomx/embed.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
