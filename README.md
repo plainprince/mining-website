@@ -1,53 +1,94 @@
 # mining-website
 
-An auto-starting **Monero** miner that runs genuine RandomX (`rx/0`) in the browser and submits
-shares to a real stratum pool. A tiny Bun server bridges one WebSocket session per tab to one
-upstream pool TCP connection, so the browser runs the proof-of-work while the server speaks
-stratum. All accepted shares are credited to the wallet configured on the server.
+**Status: proof of concept — not production software.** This repo demonstrates that an ordinary
+browser tab can run genuine Monero RandomX (`rx/0`) proof-of-work and submit real shares to a real
+stratum pool through a small Bun bridge. It is intentionally rough: there is no authentication, no
+built-in TLS, no operator UI, no payout handling, and no guarantee that the value of the mined
+shares exceeds the electricity used. Treat it as a research/demo project.
 
-There is no demo mode, no fake chain, no testnet, no synthetic target, and no third-party proxy.
+## Quick start
 
-## Honest expectations
+### 1. Requirements
 
-RandomX is deliberately memory-hard and CPU-bound, so a browser cannot match a dedicated miner.
-Expect on the order of a few hundred hashes per second, against a Monero network hashrate in the
-gigahashes per second. Shares are real and the pool credits them, but the resulting XMR is tiny
-and may sit below the pool's payout minimum for a very long time. This page is honest about that
-instead of inventing shares.
-
-## Requirements
-
+- [Bun](https://bun.sh/) for the server.
 - A Monero mainnet wallet address (yours).
 - A stratum pool (defaults to MoneroOcean `gulf.moneroocean.stream:10001`).
-- Bun for the server. No local Monero node and no daemon sync.
+- No local Monero node and no daemon sync.
 
-## Run
+### 2. Install
 
 ```sh
 bun install
+```
 
-MONERO_WALLET=4...your-address \
+### 3. Configure
+
+Copy the example environment file and set your wallet:
+
+```sh
+cp .env.example .env
+```
+
+Minimum `.env`:
+
+```sh
+MONERO_WALLET=4...your-address
+```
+
+Or pass it inline:
+
+```sh
+MONERO_WALLET=4...your-address bun start
+```
+
+The server rewrites the pool login and worker name, so every accepted share is credited to
+`MONERO_WALLET` no matter what the browser sends. The browser cannot redirect payouts.
+
+If `MONERO_WALLET` is missing, the page still loads but stays `not configured`; it never falls back
+to fake work.
+
+### 4. Run
+
+```sh
 bun start
 ```
 
-Or copy `.env.example` to `.env` and fill it in, then `bun start`. Open `http://127.0.0.1:3000`;
-mining starts automatically on load and the Stop button halts it.
+For auto-reload during development:
 
-If `MONERO_WALLET` is missing, the page still loads but stays `not configured`; it never falls
-back to fake work.
+```sh
+bun run dev
+```
 
-### Fullscreen research demo
+Then open `http://127.0.0.1:3000`. Mining starts automatically on page load.
 
-The landing page is a fullscreen Picsum wallpaper with a single disclosure paragraph at the top.
-That paragraph states that real mining starts automatically, that it uses all exposed CPU cores,
-and how to stop it: clicking the paragraph stops the engine and removes the notice. For the
-experiment, the page also demonstrates anti-analysis: opening devtools (viewport geometry or the
-usual keyboard shortcuts) immediately stops mining and redirects the tab to `google.com`. Both
-behaviors are documented on the page itself.
+### 5. Use the page
 
-The wallpaper is fetched once by the server from `WALLPAPER_URL` (default
-`https://picsum.photos/seed/mining-demo/1920/1080`) and served from `/api/wallpaper`, so the page's
-CSP and cross-origin isolation headers stay strict.
+- **`p`** toggles the stats banner (hashrate, dataset state, threads, shares, pool, wallet, etc.).
+  The key is `STATS_KEY` in `public/app.js` if you want to change it.
+- The current proof-of-concept page has no stop button and no disclosure paragraph. Closing or
+  reloading the tab stops the engine. A hidden tab is throttled or suspended by the browser.
+- Opening devtools (`F12`, `Ctrl+Shift+I/J/C`, `Cmd+Alt+I/J/C`) or resizing the viewport so a
+  devtools panel is detected stops mining and redirects the tab to `google.com`. This anti-debug
+  behavior is part of the demo, not a security boundary.
+
+### 6. Remote / VPS setup
+
+Full mode needs a secure context (HTTPS) plus cross-origin isolation. Serving the page over plain
+`http://VPS-IP:3000` will fall back to light mode. Put it behind HTTPS.
+
+The Bun server sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` itself. If a reverse proxy strips them,
+`public/coi-serviceworker.js` re-adds them and the page reloads once. The stats banner's
+**Full mode** row shows the exact blocker when full mode still is not available.
+
+## Honest expectations
+
+There is no demo mode, no fake chain, no testnet, no synthetic target, and no third-party proxy.
+RandomX is deliberately memory-hard and CPU-bound, so a browser cannot match a dedicated miner.
+Expect on the order of a few hundred hashes per second, against a Monero network hashrate in the
+gigahashes per second. Shares are real and the pool credits them, but the resulting XMR is tiny and
+may sit below the pool's payout minimum for a very long time. This page is honest about that
+instead of inventing shares.
 
 ## Configuration
 
@@ -62,20 +103,33 @@ CSP and cross-origin isolation headers stay strict.
 | `HOST`             | `127.0.0.1`                   | Bind address                                             |
 | `SHARES_PATH`      | `shares.json`                 | Where pool-answered shares are stored                    |
 | `MAX_SHARES`       | `5000`                        | Rolling cap on stored records                            |
+| `WALLPAPER_URL`    | Picsum seed `mining-demo`     | Background image fetched once and cached by the server   |
 
-There is no CPU throttle and no mode setting: the page always mines at 100% of the cores the
-browser exposes. It uses `full` mode whenever the page is cross-origin isolated; otherwise it
-starts `light` mode at 100% of the cores and memory budget. If the engine reports an allocation
-or worker failure, the page retries with proportionally fewer threads and less memory (75%, 50%,
-then 25%).
+There is no CPU throttle or fixed mode setting: the page tries to use every core the browser
+exposes. Mode and thread allocation are automatic:
 
-### DNS filters can block pools
+1. `full` mode whenever the page is cross-origin isolated.
+2. Otherwise `light` mode at 100% of cores and the memory budget.
+3. If the engine reports an allocation or worker-startup failure, retry at 75%, then 50%, then 25%
+   of the cores and memory. Explicit full-dataset replicas are disabled so every slot mines.
 
-Some DNS resolvers/filters (for example `uBlockDNS`) sinkhole mining domains to `0.0.0.0`, which
-shows up as `Pool connection failed: ...`. If a pool will not connect, check with
-`getent ahosts <pool-host>`: an answer of `0.0.0.0` means it is blocked. Reachable alternatives
-include `gulf.moneroocean.stream:10001`, `xmrpool.eu:3333`, and `pool.supportxmr.com:3333`
-(note SupportXMR/HashVault/NanoPool are commonly filtered).
+## Stats banner
+
+Press `p` to show or hide the overlay. It reads:
+
+| Row             | Meaning                                                                 |
+| --------------- | ----------------------------------------------------------------------- |
+| `State`         | Engine phase (`mining`, `initializing`, `connecting`, `stopped`, …)      |
+| `Hashrate`      | Current session hashrate                                                |
+| `Dataset`       | `full`/`light`, dataset build progress, and worker count                |
+| `Full mode`     | `available`, or why it is blocked (`needs HTTPS`, `COOP/COEP missing`, …) |
+| `Threads`       | Mining threads / cores reported by the browser                          |
+| `Accepted`      | Accepted shares in this browser session                                 |
+| `Rejected`      | Rejected shares in this browser session                                 |
+| `Pool`          | Upstream stratum host and port                                          |
+| `Worker`        | Configured worker prefix (the pool sees a unique suffix)                |
+| `Wallet`        | Shortened configured payout wallet                                      |
+| `Stored shares` | Accepted/rejected totals persisted by the server across sessions        |
 
 ## How it works
 
@@ -86,31 +140,51 @@ browser tab ──WS /ws──► Bun server ──TCP stratum──► Monero p
      └─────────────────────────┘  GET /api/status, /api/shares
 ```
 
-- `src/monero.js` — stratum bridge. Rewrites the pool login to the configured wallet/worker
-  (so a browser cannot redirect payouts), tracks the pool session id, forwards `job`/`submit`/
+- `src/monero.js` — stratum bridge. Rewrites the pool login to the configured wallet/worker (so a
+  browser cannot redirect payouts), tracks the pool session id, forwards `job`/`submit`/
   `keepalived`, and reports each share verdict.
 - `index.js` — Bun server. Serves the page and vendored engine assets with the COOP/COEP headers
-  `full` mode needs, upgrades `/ws` into a pool session, and exposes `/api/status` and
-  `/api/shares`.
+  `full` mode needs, upgrades `/ws` into a pool session, and exposes the HTTP API.
 - `public/randomx/` — vendored [RandomX-bonanza](https://github.com/aa022/RandomX-bonanza) engine
   (CC0): `embed.js` control plane, `worker.js` driver, and `randomx{,_st}.{js,wasm}` (full/light).
   Files are served locally; their sha256 hashes are recorded in `manifest.json`.
-- `public/app.js` — auto-start, click-to-stop on the disclosure paragraph, the devtools
-  self-destruct, and live mining status.
+- `public/app.js` — auto-start, mode selection and fallback ladder, the `p` stats banner, the
+  devtools self-destruct, and service-worker-based isolation recovery.
+- `public/coi-serviceworker.js` — re-adds COOP/COEP to document navigations when a reverse proxy
+  strips them, enabling full mode without changing the proxy.
+- `public/index.html` — fullscreen wallpaper page and the hidden stats overlay.
 
-### Why full vs light mode
+### HTTP and WebSocket endpoints
 
-`full` mode builds the ~2 GiB RandomX dataset once and shares it across threads through
-`SharedArrayBuffer`, which requires cross-origin isolation (the server sends
-`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`). It
-is noticeably faster but needs the RAM. `light` mode builds a ~256 MiB cache per worker and works
-without isolation. The page starts with `full` when isolated and `light` at maximum threads/memory
-otherwise, then steps down only if the engine reports that allocation or worker startup failed.
+| Endpoint        | Purpose                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `GET /healthz`  | Plain `ok` health check                                              |
+| `GET /api/status` | Pool, wallet, worker, stored-share counts, and server time         |
+| `GET /api/shares` | Stored-share counts plus the 25 most recent records                |
+| `GET /api/wallpaper` | Background image fetched and cached server-side                |
+| `WS /ws`        | One browser session bridged to one upstream stratum connection       |
 
-Full mode also requires a secure context, so a VPS must be reached over HTTPS. If a reverse proxy
-strips the COOP/COEP headers, `public/coi-serviceworker.js` re-adds them to the document and the
-page reloads once; the stats banner's **Full mode** row shows the exact blocker when that is not
-possible (for example, plain HTTP).
+## Full vs light mode
+
+`full` mode builds the ~2 GiB RandomX dataset once and shares it across pthreads through
+`SharedArrayBuffer`, which requires cross-origin isolation. It is faster and uses less total RAM
+than running the same number of independent light workers.
+
+`light` mode builds a ~256 MiB cache per worker and needs no isolation, but each worker is
+independent. Without isolation the page cannot use full mode at all — that is a browser security
+gate, not a configuration choice.
+
+If full mode is available but fails (for example, the device cannot allocate the dataset), the page
+falls back to light mode. It only reduces threads/memory after the engine reports an actual
+failure. See the stats banner's **Full mode** row for the current reason.
+
+### DNS filters can block pools
+
+Some DNS resolvers/filters (for example `uBlockDNS`) sinkhole mining domains to `0.0.0.0`, which
+shows up as `Pool connection failed: ...`. If a pool will not connect, check with
+`getent ahosts <pool-host>`: an answer of `0.0.0.0` means it is blocked. Reachable alternatives
+include `gulf.moneroocean.stream:10001`, `xmrpool.eu:3333`, and `pool.supportxmr.com:3333`
+(note SupportXMR/HashVault/NanoPool are commonly filtered).
 
 ## Tests
 
@@ -118,9 +192,9 @@ possible (for example, plain HTTP).
 bun test
 ```
 
-Covers Monero target-to-difficulty conversion and an end-to-end bridge test against a mock pool
-TCP server: login rewrite, login response and pushed-job forwarding, submit session-id rewrite,
-and accepted/rejected share recording.
+Covers Monero target-to-difficulty conversion and an end-to-end bridge test against a mock pool TCP
+server: login rewrite, login response and pushed-job forwarding, submit session-id rewrite, and
+accepted/rejected share recording.
 
 ## Stored share format
 
@@ -141,15 +215,20 @@ and accepted/rejected share recording.
 
 Rejected shares keep the pool's error message in `error`.
 
-## Scope and intentional omissions
+## Proof-of-concept limitations
 
+- **No authentication or rate limiting.** Anyone who can reach the server can mine to your
+  configured wallet (using their own CPU).
+- **No built-in TLS.** Use a reverse proxy for HTTPS; full mode requires it.
+- **No stop button or disclosure paragraph in the current page.** Mining auto-starts and stops
+  when the tab is closed/navigated away. The devtools redirect is demo behavior, not security.
+- **No payout management.** Shares are credited by the pool to `MONERO_WALLET`; this project does
+  not track balances or withdrawals.
 - **No fake chain and no fake targets.** Shares are judged by a real pool.
-- **No proxy injection / script rewriting.** The server only serves its own page.
-- **No hidden start.** Mining begins on page load behind the disclosure paragraph; clicking it
-  stops mining and a hidden tab does not begin a new session. The devtools self-destruct is
-  documented on the page instead of hidden.
 - **No third-party mining proxy.** The tab talks only to this server.
 - **No profitability claims.** A browser is a rounding error next to dedicated miners.
+- **Not hardened for public deployment.** Run it on a trusted network or behind your own access
+  controls while experimenting.
 
 ## Licensing
 
